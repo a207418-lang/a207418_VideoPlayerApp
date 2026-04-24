@@ -30,9 +30,31 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.example.a207418_zhouxiushi_lab01.ui.theme.A207418_ZHOUXIUSHI_Lab01Theme
 
+// ==================== Lab4 Data Class ====================
+data class VideoInfo(//储存视频信息类型
+    val videoTitle: String,
+    val videoSize: String
+)
 
+// ==================== Lab4 ViewModel ====================
+class VideoViewModel : ViewModel() {//记住你点了哪个视频
+    private val _currentVideo = mutableStateOf(VideoInfo("", ""))
+    val currentVideo: State<VideoInfo> = _currentVideo
+
+    fun setCurrentVideo(title: String, size: String) {
+        _currentVideo.value = VideoInfo(title, size)
+    }
+}
+
+// 你原来的VideoItem不动
 data class VideoItem(
     val thumbnailRes: Int,
     val title: String,
@@ -45,15 +67,137 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             A207418_ZHOUXIUSHI_Lab01Theme {
-                MXVideoHomePage(matricNumber = "" +  "a207418")
+                // ==================== Lab4 Navigation 入口 ====================
+                VideoAppNavigation()
             }
         }
     }
 }
-//这是APP的入口。打开APP后，系统会execute onCreate method，然后显示主界面和学号。
+
+// ==================== Lab4 导航总控制 ====================
+@Composable//管理三个页面跳转
+fun VideoAppNavigation() {
+    val navController = rememberNavController()
+    val videoViewModel: VideoViewModel = viewModel()
+
+    NavHost(
+        navController = navController,
+        startDestination = "home" // 首页作为启动页
+    ) {
+        // 屏幕1：首页（你原来的整个界面）
+        composable("home") {
+            MXVideoHomePage(
+                matricNumber = "a207418",
+                navController = navController,
+                viewModel = videoViewModel
+            )
+        }
+
+        // 屏幕2：视频详情页
+        composable("video_detail") {
+            VideoDetailScreen(
+                navController = navController,
+                viewModel = videoViewModel
+            )
+        }
+
+        // 屏幕3：设置页
+        composable("settings") {
+            SettingsScreen(navController = navController)
+        }
+    }
+}
+
+// ==================== 屏幕2：视频详情页 ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MXVideoHomePage(matricNumber: String) {
+fun VideoDetailScreen(
+    navController: NavHostController,//返回首页
+    viewModel: VideoViewModel//拿视频数据
+) {
+    val currentVideo = viewModel.currentVideo.value
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Video Detail") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.Home, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(//整个页面居中、放文字
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "Current Video Info",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFFF9800)
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(text = "Title: ${currentVideo.videoTitle}", fontSize = 18.sp)
+            Text(text = "Size: ${currentVideo.videoSize}", fontSize = 18.sp)
+            Spacer(modifier = Modifier.height(40.dp))
+            Button(onClick = { navController.navigate("home") }) {
+                Text("Back to Home")
+            }
+        }
+    }
+}
+
+// ==================== 屏幕3：设置页 ====================
+@OptIn(ExperimentalMaterial3Api::class)//点底部 Settings跳到这个页面
+@Composable
+fun SettingsScreen(navController: NavHostController) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("App Settings") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(text = "MX Video Player Settings", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(text = "Version: 1.0.0", fontSize = 16.sp)
+            Text(text = "Matric: a207418", fontSize = 16.sp)
+            Spacer(modifier = Modifier.height(40.dp))
+            Button(onClick = { navController.navigate("home") }) {
+                Text("Back to Home")
+            }
+        }
+    }
+}
+
+// ==================== 你原来的主界面：只加导航参数与点击跳转 ====================
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MXVideoHomePage(
+    matricNumber: String,
+    navController: NavHostController,
+    viewModel: VideoViewModel
+) {
 
     var searchText by remember { mutableStateOf("") }//保存搜索结果
     var selectedTab by remember { mutableStateOf(0) }//记住顶部选中的东西
@@ -152,11 +296,11 @@ fun MXVideoHomePage(matricNumber: String) {
                 }
             }
         },
-        // ==================== 底部4个按钮（Home/Playlist/Youtube/Settings，图标全修复） ====================
+        // ==================== 底部导航：点击跳转到对应页面 ====================
         bottomBar = {
             NavigationBar(
                 containerColor = Color(0xFFF5F5F5),
-                tonalElevation = 0.dp //去掉shadows
+                tonalElevation = 0.dp
             ) {
                 val bottomItems = listOf(
                     "Home" to Icons.Default.Home,
@@ -181,7 +325,12 @@ fun MXVideoHomePage(matricNumber: String) {
                             )
                         },
                         selected = index == selectedBottomNav,
-                        onClick = { selectedBottomNav = index }
+                        onClick = {
+                            selectedBottomNav = index
+                            if (index == 3) {
+                                navController.navigate("settings") // 点击Settings跳设置页
+                            }
+                        }
                     )
                 }
             }
@@ -216,7 +365,12 @@ fun MXVideoHomePage(matricNumber: String) {
 
                     // ==================== Lab3 Card + 动画 ====================
                     Card(
-                        onClick = { expanded = !expanded },
+                        onClick = {
+                            expanded = !expanded
+                            // ==================== Lab4 点击卡片跳转详情页 + 传数据 ====================
+                            viewModel.setCurrentVideo(video.title, video.size)
+                            navController.navigate("video_detail")
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .animateContentSize(),//变大smoothly
