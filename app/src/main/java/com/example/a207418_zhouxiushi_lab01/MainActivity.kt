@@ -370,37 +370,55 @@ fun VideoListScreen(navController: NavHostController) {
 }
 
 // ==================== Page 5: Add Video ====================
+// ==================== Page 5: Add Video ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddVideoScreen(navController: NavHostController, viewModel: VideoViewModel) {
     var videoTitle by remember { mutableStateOf("") }
     var videoSize by remember { mutableStateOf("") }
+    var showError by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Add New Video") }) }
     ) { paddingValues ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             TextField(
                 value = videoTitle,
-                onValueChange = { videoTitle = it },
+                onValueChange = {
+                    videoTitle = it
+                    showError = false
+                },
                 label = { Text("Video Title") },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(10.dp))
             TextField(
                 value = videoSize,
-                onValueChange = { videoSize = it },
+                onValueChange = {
+                    videoSize = it
+                    showError = false
+                },
                 label = { Text("Video Size") },
                 modifier = Modifier.fillMaxWidth()
             )
+            if (showError) {
+                Text("Please fill in all fields!", color = Color.Red, fontSize = 12.sp)
+            }
             Spacer(modifier = Modifier.height(20.dp))
             Button(onClick = {
-                viewModel.setCurrentVideo(videoTitle, videoSize)
-                navController.navigate("video_detail")
+                if (videoTitle.isNotBlank() && videoSize.isNotBlank()) {
+                    viewModel.setCurrentVideo(videoTitle, videoSize)
+                    navController.navigate("video_detail")
+                } else {
+                    showError = true
+                }
             }) {
                 Text("Save & View in Detail")
             }
