@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,53 +28,87 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navOptions
+import com.example.a207418_zhouxiushi_lab01.data.VideoEntity
+import com.example.a207418_zhouxiushi_lab01.data.VideoRepository
 import com.example.a207418_zhouxiushi_lab01.ui.theme.A207418_ZHOUXIUSHI_Lab01Theme
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
-// ==================== Data Class ====================
-data class VideoInfo(
-    val videoTitle: String,
-    val videoSize: String
-)
-
-data class VideoItem(
-    val thumbnailRes: Int,
-    val title: String,
-    val duration: String,
-    val size: String
-)
-
-// ==================== ViewModel ====================
-class VideoViewModel : ViewModel() {
-    private val _currentVideo = mutableStateOf(VideoInfo("Default Title", "Default Size"))
-    val currentVideo: State<VideoInfo> = _currentVideo
-
-    fun setCurrentVideo(title: String, size: String) {
-        _currentVideo.value = VideoInfo(title, size)
+// ==================== ViewModel Factory ====================
+class VideoViewModelFactory(private val repository: VideoRepository) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(VideoViewModel::class.java)) {
+            return VideoViewModel(repository) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
 
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            A207418_ZHOUXIUSHI_Lab01Theme {
-                VideoAppNavigation()
+// ==================== ViewModel ====================
+class VideoViewModel(private val repository: VideoRepository) : ViewModel() {
+
+    val allVideos: Flow<List<VideoEntity>> = repository.allVideos
+
+    private val _currentVideo = mutableStateOf<VideoEntity?>(null)
+    val currentVideo: State<VideoEntity?> = _currentVideo
+
+    fun setCurrentVideo(video: VideoEntity) {
+        _currentVideo.value = video
+    }
+
+    fun insertVideo(video: VideoEntity) = viewModelScope.launch {
+        repository.insert(video)
+    }
+
+    fun deleteVideo(video: VideoEntity) = viewModelScope.launch {
+        repository.delete(video)
+    }
+
+    init {
+        viewModelScope.launch {
+            val list = repository.allVideos.first()
+            if (list.isEmpty()) {
+                val defaults = listOf(
+                    VideoEntity(thumbnailRes = R.drawable.video_thumb_1, title = "Jay Chou 周杰伦 Loving you is no big deal MV", duration = "03:36", size = "46.67 MB"),
+                    VideoEntity(thumbnailRes = R.drawable.video_thumb_2, title = "Jay Chou 周杰伦 I am not worthy MV", duration = "03:36", size = "74.52 MB"),
+                    VideoEntity(thumbnailRes = R.drawable.video_thumb_3, title = "周杰伦 JAY CHOU Bullfighting", duration = "04:17", size = "101.65 MB"),
+                    VideoEntity(thumbnailRes = R.drawable.video_thumb_4, title = "周杰伦 Jay Chou The Secret That Cannot Be Told MV", duration = "05:25", size = "12.00 MB")
+                )
+                defaults.forEach { repository.insert(it) }
             }
         }
     }
 }
 
-// ==================== 5-Page Navigation ====================
+// ==================== MainActivity ====================
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val repository = (application as VideoApplication).repository
+        val factory = VideoViewModelFactory(repository)
+
+        setContent {
+            A207418_ZHOUXIUSHI_Lab01Theme {
+                VideoAppNavigation(factory)
+            }
+        }
+    }
+}
+
+// ==================== Navigation ====================
 @Composable
-fun VideoAppNavigation() {
+fun VideoAppNavigation(factory: VideoViewModelFactory) {
     val navController = rememberNavController()
-    val videoViewModel: VideoViewModel = viewModel()
+    val videoViewModel: VideoViewModel = viewModel(factory = factory)
 
     NavHost(
         navController = navController,
@@ -89,7 +124,7 @@ fun VideoAppNavigation() {
             SettingsScreen(navController)
         }
         composable("video_list") {
-            VideoListScreen(navController)
+            VideoListScreen(navController, videoViewModel)
         }
         composable("add_video") {
             AddVideoScreen(navController, videoViewModel)
@@ -97,7 +132,7 @@ fun VideoAppNavigation() {
     }
 }
 
-// ==================== Page 1: Home ====================
+// ==================== Home Page ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MXVideoHomePage(
@@ -109,15 +144,7 @@ fun MXVideoHomePage(
     var selectedBottomNav by remember { mutableStateOf(0) }
     val tabs = listOf("Video", "Album", "Folder", "Music")
 
-    val videoList = remember {
-        listOf(
-            VideoItem(R.drawable.video_thumb_1, "Jay Chou 周杰伦 Loving you is no big deal MV", "03:36", "46.67 MB"),
-            VideoItem(R.drawable.video_thumb_2, "Jay Chou 周杰伦 I am not worthy MV", "03:36", "74.52 MB"),
-            VideoItem(R.drawable.video_thumb_3, "周杰伦 JAY CHOU Bullfighting", "04:17", "101.65 MB"),
-            VideoItem(R.drawable.video_thumb_4, "周杰伦 Jay Chou The Secret That Cannot Be Told MV", "05:25", "12.00 MB")
-        )
-    }
-
+    val videoList by viewModel.allVideos.collectAsState(initial = emptyList())
     val filteredVideos = videoList.filter {
         it.title.contains(searchText, ignoreCase = true)
     }
@@ -236,11 +263,8 @@ fun MXVideoHomePage(
 
                     Card(
                         onClick = {
-                            viewModel.setCurrentVideo(video.title, video.size)
-                            navController.navigate(
-                                "video_detail",
-                                navOptions = navOptions { launchSingleTop = true }
-                            )
+                            viewModel.setCurrentVideo(video)
+                            navController.navigate("video_detail")
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -334,11 +358,11 @@ fun MXVideoHomePage(
     }
 }
 
-// ==================== Page 2: Video Detail ====================
+// ==================== Video Detail ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoDetailScreen(navController: NavHostController, viewModel: VideoViewModel) {
-    val currentVideo = viewModel.currentVideo.value
+    val currentVideo = viewModel.currentVideo.value ?: return
     Scaffold(
         topBar = {
             TopAppBar(
@@ -366,11 +390,15 @@ fun VideoDetailScreen(navController: NavHostController, viewModel: VideoViewMode
             )
             Spacer(modifier = Modifier.height(24.dp))
             Text(
-                text = "Title: ${currentVideo.videoTitle}",
+                text = "Title: ${currentVideo.title}",
                 style = MaterialTheme.typography.titleLarge
             )
             Text(
-                text = "Size: ${currentVideo.videoSize}",
+                text = "Size: ${currentVideo.size}",
+                style = MaterialTheme.typography.titleLarge
+            )
+            Text(
+                text = "Duration: ${currentVideo.duration}",
                 style = MaterialTheme.typography.titleLarge
             )
             Spacer(modifier = Modifier.height(40.dp))
@@ -385,7 +413,7 @@ fun VideoDetailScreen(navController: NavHostController, viewModel: VideoViewMode
     }
 }
 
-// ==================== Page 3: Settings ====================
+// ==================== Settings ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(navController: NavHostController) {
@@ -430,10 +458,12 @@ fun SettingsScreen(navController: NavHostController) {
     }
 }
 
-// ==================== Page 4: Video List ====================
+// ==================== Video List ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VideoListScreen(navController: NavHostController) {
+fun VideoListScreen(navController: NavHostController, viewModel: VideoViewModel) {
+    val videos by viewModel.allVideos.collectAsState(initial = emptyList())
+
     Scaffold(
         topBar = { TopAppBar(title = { Text("Video List") }) }
     ) { paddingValues ->
@@ -441,41 +471,79 @@ fun VideoListScreen(navController: NavHostController) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(16.dp)
         ) {
-            Text(
-                "All Videos",
-                style = MaterialTheme.typography.headlineSmall
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Text("• Jay Chou MV 1", style = MaterialTheme.typography.titleMedium)
-            Text("• Jay Chou MV 2", style = MaterialTheme.typography.titleMedium)
-            Text("• Jay Chou MV 3", style = MaterialTheme.typography.titleMedium)
-            Text("• Jay Chou MV 4", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(32.dp))
-            Button(onClick = {
-                navController.navigate(
-                    "add_video",
-                    navOptions = navOptions { launchSingleTop = true }
-                )
-            }) {
-                Text("Go to Add Video")
+            if (videos.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No videos available", style = MaterialTheme.typography.titleMedium)
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(videos.size) { index ->
+                        val video = videos[index]
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                viewModel.setCurrentVideo(video)
+                                navController.navigate("video_detail")
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = video.title,
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    Text(
+                                        text = "${video.duration} • ${video.size}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = { navController.popBackStack() }) {
-                Text("Back to Home")
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { navController.navigate("add_video") },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Go to Add Video")
+                }
+                Button(
+                    onClick = { navController.popBackStack() },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Back to Home")
+                }
             }
         }
     }
 }
 
-// ==================== Page 5: Add Video ====================
+// ==================== Add Video ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddVideoScreen(navController: NavHostController, viewModel: VideoViewModel) {
     var videoTitle by remember { mutableStateOf("") }
+    var videoDuration by remember { mutableStateOf("") }
     var videoSize by remember { mutableStateOf("") }
     var showError by remember { mutableStateOf(false) }
 
@@ -501,15 +569,26 @@ fun AddVideoScreen(navController: NavHostController, viewModel: VideoViewModel) 
             )
             Spacer(modifier = Modifier.height(16.dp))
             TextField(
+                value = videoDuration,
+                onValueChange = {
+                    videoDuration = it
+                    showError = false
+                },
+                label = { Text("Duration (e.g. 03:36)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            TextField(
                 value = videoSize,
                 onValueChange = {
                     videoSize = it
                     showError = false
                 },
-                label = { Text("Video Size") },
+                label = { Text("Video Size (e.g. 50 MB)") },
                 modifier = Modifier.fillMaxWidth()
             )
             if (showError) {
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "Please fill in all fields!",
                     color = MaterialTheme.colorScheme.error,
@@ -518,12 +597,16 @@ fun AddVideoScreen(navController: NavHostController, viewModel: VideoViewModel) 
             }
             Spacer(modifier = Modifier.height(24.dp))
             Button(onClick = {
-                if (videoTitle.isNotBlank() && videoSize.isNotBlank()) {
-                    viewModel.setCurrentVideo(videoTitle, videoSize)
-                    navController.navigate(
-                        "video_detail",
-                        navOptions = navOptions { launchSingleTop = true }
+                if (videoTitle.isNotBlank() && videoDuration.isNotBlank() && videoSize.isNotBlank()) {
+                    val newVideo = VideoEntity(
+                        thumbnailRes = R.drawable.video_thumb_1,
+                        title = videoTitle,
+                        duration = videoDuration,
+                        size = videoSize
                     )
+                    viewModel.insertVideo(newVideo)
+                    viewModel.setCurrentVideo(newVideo)
+                    navController.navigate("video_detail")
                 } else {
                     showError = true
                 }
